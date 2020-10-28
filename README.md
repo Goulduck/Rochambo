@@ -6,6 +6,8 @@ Having issues with second game in tests. Gambit has been reset but timeout occur
 
 Would like to implement tests for the calculate_winner function.
 
+## Overview
+
 A GenServer that can play Rock, Paper, Scissors.
 
 ```elixir

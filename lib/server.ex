@@ -65,19 +65,23 @@ defmodule Rochambo.Server do
     @impl true
     def handle_call({:join, player_name}, from, game_state) do
         {pid, _ref} = from
-        case pid in Enum.map(game_state.players, & &1[:id]) do
-            true -> {:reply, {:error, "Already joined!"}, game_state}
-            _ -> players = [%{id: pid, name: player_name} | game_state.players]
-                new_scores = Map.put(game_state.scores, player_name, 0)
-                new_choices = Map.put(game_state.choices, player_name, :none)
-                new_status = if (length(players) == 2), do: :waiting_for_gambits, else: :need_players
-                new_state = game_state 
-                    |> Map.put(:players, players) 
-                    |> Map.put(:scores, new_scores)
-                    |> Map.put(:choices, new_choices)  
-                    |> Map.put(:status, new_status)
-                {:reply, :joined, new_state}
+        case game_state.status do
+            :need_players -> case pid in Enum.map(game_state.players, & &1[:id]) do
+                true -> {:reply, {:error, "Already joined!"}, game_state}
+                _ -> players = [%{id: pid, name: player_name} | game_state.players]
+                    new_scores = Map.put(game_state.scores, player_name, 0)
+                    new_choices = Map.put(game_state.choices, player_name, :none)
+                    new_status = if (length(players) == 2), do: :waiting_for_gambits, else: :need_players
+                    new_state = game_state 
+                        |> Map.put(:players, players) 
+                        |> Map.put(:scores, new_scores)
+                        |> Map.put(:choices, new_choices)  
+                        |> Map.put(:status, new_status)
+                    {:reply, :joined, new_state}
+                end
+            _ -> {:reply, {:error, "Already full!"}, game_state}
         end
+        
     end
 
     @impl true

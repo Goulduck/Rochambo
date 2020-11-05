@@ -64,11 +64,11 @@ defmodule Rochambo.Server do
 
     @impl true
     def handle_call({:join, player_name}, from, game_state) do
-        {pid, _ref} = from
+        {pid, ref} = from
         case game_state.status do
             :need_players -> case pid in Enum.map(game_state.players, & &1[:id]) do
                 true -> {:reply, {:error, "Already joined!"}, game_state}
-                _ -> players = [%{id: pid, name: player_name} | game_state.players]
+                _ -> players = [%{id: pid, last_message_ref: ref, name: player_name} | game_state.players]
                     new_scores = Map.put(game_state.scores, player_name, 0)
                     new_choices = Map.put(game_state.choices, player_name, :none)
                     new_status = if (length(players) == 2), do: :waiting_for_gambits, else: :need_players
@@ -81,7 +81,6 @@ defmodule Rochambo.Server do
                 end
             _ -> {:reply, {:error, "Already full!"}, game_state}
         end
-        
     end
 
     @impl true
@@ -89,18 +88,33 @@ defmodule Rochambo.Server do
         {pid, _ref} = from
         player_name = Enum.find(game_state.players, fn player -> player.id === pid end).name
         new_choices = Map.put(game_state.choices, player_name, gambit)
+        updated_ref = update_ref(game_state, from)
         new_state = game_state
             |> Map.put(:choices, new_choices)
+            |> Map.put(:players, updated_ref)
         case :none in Map.values(new_choices) do
             true -> {:noreply, new_state, :hibernate}
             _ -> set_winner = calculate_winner(new_state)
-                message = cond do
-                    set_winner.winner === :draw -> "draw"
-                    set_winner.winner === player_name -> "you won!"
-                    true -> "you lose!"
-                end
-                {:reply, message, set_winner}
+                inform_result(set_winner)
+                {:noreply, set_winner}
         end        
+    end
+
+    def inform_result(state) do
+        case state.winner do
+            :draw -> Enum.each(state.players, fn player -> GenServer.reply({player.id, player.last_message_ref}, "draw") end)
+            _other -> Enum.each(state.players, fn player -> if (state.winner == player.name) 
+                do GenServer.reply({player.id, player.last_message_ref}, "you won!")
+                else GenServer.reply({player.id, player.last_message_ref}, "you lost!")
+            end end)
+        end
+    end
+
+    def update_ref(state, from) do 
+        {pid, ref} = from
+        player_to_update = Enum.find(state.players, fn player -> player.id === pid end)
+        remove_player_from_state = state.players -- [player_to_update]
+        remove_player_from_state ++ [Map.put(player_to_update, :last_message_ref, ref)]
     end
 
     defp calculate_winner(state) do
@@ -126,7 +140,11 @@ defmodule Rochambo.Server do
     end
 
     defp update_score(winner, state) do
-        Map.put(state.scores, winner, state.scores[winner] + 1)
+        unless (winner == :draw) do
+            Map.put(state.scores, winner, state.scores[winner] + 1)
+        else
+            state.scores
+        end
     end
 
 end
